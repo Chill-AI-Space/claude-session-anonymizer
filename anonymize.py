@@ -388,11 +388,21 @@ def list_projects() -> list[tuple[str, Path]]:
     return results
 
 
+def format_size(size_bytes: int) -> str:
+    """Format file size as human-readable string."""
+    if size_bytes >= 1_000_000:
+        return f"{size_bytes / 1_000_000:.1f}M"
+    elif size_bytes >= 1_000:
+        return f"{size_bytes / 1_000:.0f}K"
+    return f"{size_bytes}B"
+
+
 def list_sessions(project_dir: Path) -> list[dict]:
-    """List sessions in a project directory with metadata."""
+    """List sessions in a project directory with metadata, sorted by size desc."""
     sessions = []
-    for f in sorted(project_dir.glob("*.jsonl")):
+    for f in project_dir.glob("*.jsonl"):
         session_id = f.stem
+        file_size = f.stat().st_size
         # Read first user message for preview
         preview = ""
         timestamp = ""
@@ -406,7 +416,7 @@ def list_sessions(project_dir: Path) -> list[dict]:
                             msg = obj.get("message", {})
                             content = msg.get("content", "")
                             if isinstance(content, str):
-                                preview = content[:100]
+                                preview = content[:120]
                             timestamp = obj.get("timestamp", "")
                         if obj.get("type") in ("user", "assistant"):
                             msg_count += 1
@@ -421,7 +431,11 @@ def list_sessions(project_dir: Path) -> list[dict]:
             "preview": preview,
             "timestamp": timestamp,
             "message_count": msg_count,
+            "size": file_size,
         })
+
+    # Sort by size descending — biggest sessions first
+    sessions.sort(key=lambda s: s["size"], reverse=True)
     return sessions
 
 
@@ -739,19 +753,44 @@ def main():
 
     # ── List mode ──
     if args.list:
-        print("Available projects:\n")
-        for i, (name, path) in enumerate(projects, 1):
-            sessions = list_sessions(path)
-            print(f"  [{i}] {name}  ({len(sessions)} sessions)")
-            for s in sessions[:5]:
-                ts = s['timestamp'][:10] if s['timestamp'] else '?'
-                preview = s['preview'][:60] + '...' if len(s['preview']) > 60 else s['preview']
-                print(f"      {s['id'][:8]}...  {ts}  msgs:{s['message_count']:3d}  {preview}")
-            if len(sessions) > 5:
-                print(f"      ... and {len(sessions) - 5} more")
-            print()
-        print("Usage: python anonymize.py <session_id1>,<session_id2> --project <dir_name>")
-        print("       Use full session ID or first 8 chars.")
+        # Collect ALL sessions across all projects into one list
+        all_sessions_flat = []
+        for name, path in projects:
+            for s in list_sessions(path):
+                # Extract short project name
+                parts = name.strip("/").split("/")
+                meaningful = [p for p in parts if p and p not in ("Users", "home", "Documents", "GitHub")]
+                short_proj = "/".join(meaningful[-2:]) if meaningful else name
+                s["project"] = short_proj
+                s["project_dir"] = path.name
+                all_sessions_flat.append(s)
+
+        # Already sorted by size within each project; re-sort globally
+        all_sessions_flat.sort(key=lambda s: s["size"], reverse=True)
+
+        total = len(all_sessions_flat)
+        show = all_sessions_flat[:30]
+
+        print(f"Top {len(show)} sessions by size (out of {total} total):\n")
+        print(f"  {'#':>3}  {'ID':<10} {'Size':>6} {'Msgs':>5} {'Date':<12} {'Project':<25} Preview")
+        print(f"  {'─'*3}  {'─'*10} {'─'*6} {'─'*5} {'─'*12} {'─'*25} {'─'*30}")
+
+        for i, s in enumerate(show, 1):
+            sid = s['id'][:8] + ".."
+            ts = s['timestamp'][:10] if s['timestamp'] else '—'
+            size = format_size(s['size'])
+            msgs = str(s['message_count'])
+            proj = s['project'][:25]
+            preview = re.sub(r'\s+', ' ', s['preview'][:35]).strip()
+            if len(s['preview']) > 35:
+                preview += "..."
+            print(f"  {i:>3}  {sid:<10} {size:>6} {msgs:>5} {ts:<12} {proj:<25} {preview}")
+
+        if total > 30:
+            print(f"\n  ... {total - 30} more smaller sessions not shown")
+
+        print(f"\nUsage: python3 anonymize.py <ID> --project <name>")
+        print(f"       First 8 chars of ID is enough.")
         sys.exit(0)
 
     # ── Select project ──
@@ -791,11 +830,19 @@ def main():
     if args.sessions:
         session_ids = [s.strip() for s in args.sessions.split(",")]
     else:
-        print(f"\nAvailable sessions ({len(all_sessions)}):\n")
-        for i, s in enumerate(all_sessions, 1):
-            ts = s['timestamp'][:10] if s['timestamp'] else '?'
-            preview = s['preview'][:60] + '...' if len(s['preview']) > 60 else s['preview']
-            print(f"  [{i}] {s['id'][:8]}...  {ts}  msgs:{s['message_count']:3d}  {preview}")
+        show = all_sessions[:30]
+        print(f"\nSessions sorted by size ({len(all_sessions)} total, showing top {len(show)}):\n")
+        print(f"  {'#':>3}  {'ID':<10} {'Size':>6} {'Msgs':>5} {'Date':<12} Preview")
+        print(f"  {'─'*3}  {'─'*10} {'─'*6} {'─'*5} {'─'*12} {'─'*35}")
+        for i, s in enumerate(show, 1):
+            sid = s['id'][:8] + ".."
+            ts = s['timestamp'][:10] if s['timestamp'] else '—'
+            size = format_size(s['size'])
+            msgs = str(s['message_count'])
+            preview = re.sub(r'\s+', ' ', s['preview'][:40]).strip()
+            if len(s['preview']) > 40:
+                preview += "..."
+            print(f"  {i:>3}  {sid:<10} {size:>6} {msgs:>5} {ts:<12} {preview}")
         print()
         print("Enter session numbers (comma-separated) or 'all':")
         try:
