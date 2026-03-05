@@ -438,41 +438,14 @@ def read_session(session_path: Path) -> list[dict]:
     return messages
 
 
-def extract_text_from_session(messages: list[dict]) -> str:
-    """Extract all text content from session messages."""
-    texts = []
-    for msg in messages:
-        # Extract from message.content
-        message = msg.get("message", {})
-        content = message.get("content", "")
-        if isinstance(content, str):
-            texts.append(content)
-        elif isinstance(content, list):
-            for item in content:
-                if isinstance(item, dict):
-                    if item.get("type") == "text":
-                        texts.append(item.get("text", ""))
-                    elif item.get("type") == "tool_use":
-                        inp = item.get("input", {})
-                        if isinstance(inp, dict):
-                            for v in inp.values():
-                                if isinstance(v, str):
-                                    texts.append(v)
-                    elif item.get("type") == "tool_result":
-                        res = item.get("content", "")
-                        if isinstance(res, str):
-                            texts.append(res)
-                        elif isinstance(res, list):
-                            for r in res:
-                                if isinstance(r, dict) and r.get("text"):
-                                    texts.append(r["text"])
+def extract_text_from_session(session_path: Path) -> str:
+    """Extract all text from a session file by reading the raw JSONL.
 
-        # Also check cwd, gitBranch, etc
-        for field in ["cwd", "gitBranch"]:
-            if field in msg and isinstance(msg[field], str):
-                texts.append(msg[field])
-
-    return "\n".join(texts)
+    We scan the raw file content rather than parsing JSON structure,
+    because sensitive data can appear anywhere — deeply nested tool results,
+    metadata fields, etc. Raw scanning ensures nothing is missed.
+    """
+    return session_path.read_text(encoding="utf-8", errors="replace")
 
 
 # ─── Scanner ─────────────────────────────────────────────────────────────────
@@ -817,7 +790,7 @@ def main():
     for s in selected_sessions:
         messages = read_session(s["path"])
         all_messages[s["id"]] = messages
-        all_text += extract_text_from_session(messages) + "\n"
+        all_text += extract_text_from_session(s["path"]) + "\n"
 
     print(f"Extracted {len(all_text):,} characters of text.")
 

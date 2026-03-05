@@ -24,7 +24,7 @@ This tool:
 ## Quick Start
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/claude-session-anonymizer.git
+git clone https://github.com/Chill-AI-Space/claude-session-anonymizer.git
 cd claude-session-anonymizer
 
 # List all projects and sessions
