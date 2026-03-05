@@ -2,24 +2,11 @@
 
 **100% local. Zero external API calls. No data leaves your machine.**
 
-A CLI tool to anonymize [Claude Code](https://docs.anthropic.com/en/docs/claude-code) session transcripts before sharing them publicly (e.g., for research, debugging, or training data).
+Anonymize [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions before sharing them — for research, debugging, or open-source contributions.
 
 ## Why?
 
-Claude Code sessions stored in `~/.claude/projects/` contain everything: your file paths, API keys, emails, client names, internal URLs, and more. If you want to share session data — for research, bug reports, or open-source contributions — you need to scrub it first.
-
-This tool:
-- **Scans** sessions for sensitive patterns (keys, emails, phones, paths, URLs, proper nouns)
-- **Replaces** all findings consistently (same value → same replacement everywhere)
-- **Reports** what was found, categorized by severity
-- **Outputs** clean anonymized session files ready to share
-
-## Privacy Guarantee
-
-- Written in pure Python — **zero dependencies**
-- **No network calls** — no AI APIs, no cloud services, no telemetry
-- All detection is via **local regex patterns**
-- You can audit the entire source: it's one file (`anonymize.py`)
+Sessions in `~/.claude/projects/` contain everything: API keys, emails, file paths, client names, internal URLs. This tool scrubs it all with consistent 1:1 replacements so the conversation still makes sense.
 
 ## Quick Start
 
@@ -27,22 +14,50 @@ This tool:
 git clone https://github.com/Chill-AI-Space/claude-session-anonymizer.git
 cd claude-session-anonymizer
 
-# List all projects and sessions
-python anonymize.py --list
+# 1. Browse your sessions
+python3 anonymize.py --list
 
-# Anonymize specific sessions
-python anonymize.py <session_id1>,<session_id2> --project <project_name>
-
-# Interactive mode
-python anonymize.py
-
-# Dry run — only scan and report, don't write files
-python anonymize.py --dry-run
+# 2. Anonymize (first 8 chars of ID is enough)
+python3 anonymize.py a1b2c3d4 --project my-project
 ```
 
-## What It Detects
+### Use with Claude Code
 
-Findings are categorized by severity:
+Paste this prompt into Claude Code and it will walk you through everything:
+
+```
+I want to share some of my Claude Code sessions publicly. Help me find and anonymize them.
+
+Step 1: Show me my sessions — run this and show the output:
+  python3 ~/Documents/GitHub/claude-session-anonymizer/anonymize.py --list
+
+Step 2: I'll pick which sessions to anonymize by telling you the IDs.
+
+Step 3: For each session I pick, run:
+  python3 ~/Documents/GitHub/claude-session-anonymizer/anonymize.py <session_ids> --project <project> -o ~/Desktop/anonymized
+
+Step 4: After anonymization, verify nothing leaked:
+  - Open the report.txt and pick 5-10 original values (emails, keys, paths)
+  - grep for each one in the transcript and session files
+  - Report back: how many values checked, how many found (should be 0)
+
+Step 5: Show me the first 30 lines of the transcript so I can confirm it looks good.
+```
+
+## Output
+
+Three files per session:
+
+```
+output/
+├── my-project_2026-03-01_session.jsonl    # anonymized raw session (for sharing/import)
+├── my-project_2026-03-01_transcript.txt   # human-readable conversation
+└── report.txt                             # what was found, replaced, match counts
+```
+
+See [`examples/`](examples/) for sample output.
+
+## What It Detects
 
 | Priority | Category | Examples |
 |----------|----------|----------|
@@ -54,37 +69,29 @@ Findings are categorized by severity:
 
 ## How Replacement Works
 
-Every unique sensitive value gets a **deterministic replacement**:
-
-| Type | Original | Replacement |
-|------|----------|-------------|
-| Email | `john@acme.com` | `user1@example-1.com` |
-| Phone | `+1-555-123-4567` | `+1-555-000-0001` |
-| API Key | `sk-ant-abc123...` | `REDACTED_KEY_001` |
-| File Path | `/Users/john/project/` | `/Users/ANONYMIZED_USER/project/` |
-| URL | `https://acme.internal.io/api` | `https://example-1.com/path` |
-| Name | `Vladimir` | `NAME_1` |
-
-**Consistency**: If `john@acme.com` appears 47 times across the session, all 47 occurrences become `user1@example-1.com`. This preserves the logical flow of the conversation.
-
-## Output
+Every unique value gets a **consistent replacement** across the entire session:
 
 ```
-output/
-├── anonymization-report.html    # Visual report of all findings
-└── <session_id>.anonymized.jsonl # Anonymized session file(s)
+john@acme.com          → user1@example-1.com     (all 47 occurrences)
+/Users/john/project    → /Users/ANONYMIZED_USER/project
+sk-ant-api03-xKj8...  → REDACTED_KEY_001
+Vladimir               → NAME_1
 ```
 
-The HTML report groups findings by severity so you can quickly review what was detected.
+The report shows each replacement and how many times it was applied:
 
-## Session Storage
-
-Claude Code stores sessions at:
 ```
-~/.claude/projects/<encoded-project-path>/<session-id>.jsonl
+[Email Address]  x12
+  john@acme.com
+  -> user1@example-1.com
 ```
 
-Each file is JSONL (one JSON object per line) containing user messages, assistant responses, tool calls, and metadata.
+## Privacy Guarantee
+
+- Pure Python — **zero dependencies**
+- **No network calls** — no AI APIs, no cloud services, no telemetry
+- All detection via **local regex patterns**
+- One file to audit: `anonymize.py`
 
 ## License
 
