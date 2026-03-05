@@ -841,6 +841,30 @@ def main():
 
     print(f"\n  Report: {report_path}")
     print(f"\n  Total replacements: {len(replacement_map.map)}")
+
+    # ── Verification helper ──
+    # Show the most critical originals so user can Ctrl+F in the output file
+    critical_originals = [
+        (cat, val) for cat, val, pri in findings if pri <= 2
+    ]
+    if critical_originals and not args.dry_run:
+        print()
+        print("─── Verify it worked ───────────────────────────────")
+        print("Open the .anonymized.jsonl in any editor and Ctrl+F")
+        print("for these — none should be found:")
+        print()
+        for cat, val in critical_originals[:10]:
+            print(f"  {val}")
+        if len(critical_originals) > 10:
+            print(f"  ... and {len(critical_originals) - 10} more (see HTML report)")
+        print()
+        # Also suggest a one-liner grep
+        out_glob = output_dir / "*.anonymized.jsonl"
+        sample_vals = [v for _, v in critical_originals[:3]]
+        grep_pattern = "\\|".join(sample_vals)
+        print(f"  Quick check:  grep '{grep_pattern}' {out_glob}")
+        print(f"  Expected output: (nothing)")
+
     print()
     print("Done! Open the HTML report to review all findings.")
     print()
