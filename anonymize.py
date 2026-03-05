@@ -512,16 +512,18 @@ def scan_text(text: str) -> list[tuple[str, str, int]]:
 
 # ─── Anonymizer ──────────────────────────────────────────────────────────────
 
-def anonymize_session(messages: list[dict], replacement_map: ReplacementMap,
-                       findings: list[tuple[str, str, int]]) -> list[dict]:
-    """Apply anonymization to session messages."""
+def anonymize_session_lines(session_path: Path, replacement_map: ReplacementMap,
+                             findings: list[tuple[str, str, int]]) -> str:
+    """Apply anonymization to a raw session file and return anonymized text.
 
+    Works on raw JSONL text to avoid JSON escape/unescape issues.
+    Replaces both plain and JSON-escaped versions of each value.
+    """
     # Build replacement map first
     for category, value, _priority in findings:
         replacement_map.get_replacement(value, category)
 
-    # Serialize messages to string, apply replacements, deserialize back
-    raw = json.dumps(messages, ensure_ascii=False)
+    raw = session_path.read_text(encoding="utf-8", errors="replace")
 
     # Sort replacements by length (longest first) to avoid partial replacements
     sorted_replacements = sorted(
@@ -531,9 +533,15 @@ def anonymize_session(messages: list[dict], replacement_map: ReplacementMap,
     )
 
     for original, replacement in sorted_replacements:
+        # Replace plain text
         raw = raw.replace(original, replacement)
+        # Also replace JSON-escaped version (e.g. paths with \/ or \\)
+        esc_orig = json.dumps(original)[1:-1]  # strip surrounding quotes
+        esc_repl = json.dumps(replacement)[1:-1]
+        if esc_orig != original:
+            raw = raw.replace(esc_orig, esc_repl)
 
-    return json.loads(raw)
+    return raw
 
 
 # ─── Report generation ───────────────────────────────────────────────────────
@@ -786,10 +794,7 @@ def main():
 
     # ── Scan ──
     all_text = ""
-    all_messages = {}
     for s in selected_sessions:
-        messages = read_session(s["path"])
-        all_messages[s["id"]] = messages
         all_text += extract_text_from_session(s["path"]) + "\n"
 
     print(f"Extracted {len(all_text):,} characters of text.")
@@ -825,13 +830,11 @@ def main():
 
     if not args.dry_run:
         for s in selected_sessions:
-            messages = all_messages[s["id"]]
-            anon_messages = anonymize_session(messages, replacement_map, findings)
-
+            anonymized_text = anonymize_session_lines(
+                s["path"], replacement_map, findings
+            )
             out_file = output_dir / f"{s['id']}.anonymized.jsonl"
-            with open(out_file, "w") as f:
-                for msg in anon_messages:
-                    f.write(json.dumps(msg, ensure_ascii=False) + "\n")
+            out_file.write_text(anonymized_text, encoding="utf-8")
             print(f"  Written: {out_file.name}")
 
     # Generate report (always, even in dry-run)
@@ -842,31 +845,17 @@ def main():
     print(f"\n  Report: {report_path}")
     print(f"\n  Total replacements: {len(replacement_map.map)}")
 
-    # ── Verification helper ──
-    # Show the most critical originals so user can Ctrl+F in the output file
-    critical_originals = [
-        (cat, val) for cat, val, pri in findings if pri <= 2
-    ]
-    if critical_originals and not args.dry_run:
+    # ── Verification hint ──
+    if replacement_map.map and not args.dry_run:
         print()
-        print("─── Verify it worked ───────────────────────────────")
+        print("─── Verify ─────────────────────────────────────────")
         print("Open the .anonymized.jsonl in any editor and Ctrl+F")
-        print("for these — none should be found:")
+        print("for any sensitive value — none should be found.")
         print()
-        for cat, val in critical_originals[:10]:
-            print(f"  {val}")
-        if len(critical_originals) > 10:
-            print(f"  ... and {len(critical_originals) - 10} more (see HTML report)")
-        print()
-        # Also suggest a one-liner grep
-        out_glob = output_dir / "*.anonymized.jsonl"
-        sample_vals = [v for _, v in critical_originals[:3]]
-        grep_pattern = "\\|".join(sample_vals)
-        print(f"  Quick check:  grep '{grep_pattern}' {out_glob}")
-        print(f"  Expected output: (nothing)")
+        print(f"Full replacement list → {report_path}")
 
     print()
-    print("Done! Open the HTML report to review all findings.")
+    print("Done!")
     print()
 
 
