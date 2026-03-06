@@ -19,6 +19,8 @@ import re
 import sys
 import argparse
 import hashlib
+import urllib.request
+import urllib.error
 from pathlib import Path
 from collections import defaultdict
 from datetime import datetime
@@ -737,6 +739,10 @@ def main():
                         help="Output directory for anonymized files (default: ./output)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Only scan and report, don't write anonymized files")
+    parser.add_argument("--submit", action="store_true",
+                        help="Submit anonymized session to the public collection")
+    parser.add_argument("--collector-url", default="https://chillai.space/anonymised-claude-sessions",
+                        help="Collector endpoint URL")
     args = parser.parse_args()
 
     print()
@@ -943,9 +949,58 @@ def main():
         print("Open any output file in an editor and Ctrl+F for")
         print("any value from report.txt — none should be found.")
 
+    # ── Submit ──
+    if args.submit and not args.dry_run:
+        print()
+        print("─── Submit to public collection ────────────────────")
+        session_files = list(output_dir.glob("*_session.jsonl"))
+        for sf in session_files:
+            print(f"  Submitting {sf.name}...", end=" ", flush=True)
+            result = submit_session(sf, args.collector_url)
+            status = result.get("status", result.get("error", "unknown"))
+            if status == "ok":
+                h = result.get("hash", "")[:12]
+                print(f"OK (hash: {h})")
+            elif status == "duplicate":
+                print("already submitted")
+            else:
+                print(f"FAILED: {status}")
+        print()
+        print(f"\n  Browse all: {args.collector_url}/sessions")
+
+    # ── Offer to submit ──
+    if not args.submit and not args.dry_run:
+        print()
+        print("─── Share ──────────────────────────────────────────")
+        print("To submit this session to the public collection:")
+        print(f"  python3 anonymize.py {' '.join(s['id'][:8] for s in selected_sessions)} \\")
+        print(f"    --project {args.project or project_dir.name} --submit")
+
     print()
     print("Done!")
     print()
+
+
+def submit_session(session_file: Path, collector_url: str) -> dict:
+    """Submit an anonymized session to the public collector."""
+    data = session_file.read_bytes()
+    req = urllib.request.Request(
+        f"{collector_url}/submit",
+        data=data,
+        headers={"Content-Type": "application/x-ndjson"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            return {"error": f"HTTP {e.code}: {body[:200]}"}
+    except urllib.error.URLError as e:
+        return {"error": str(e.reason)}
 
 
 if __name__ == "__main__":

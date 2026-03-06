@@ -1,28 +1,31 @@
 # Prompt for Claude Code
 
-Copy-paste this into Claude Code to find interesting sessions and anonymize them:
+Copy-paste this into Claude Code and it will do everything automatically:
 
 ---
 
 ```
-I want to share some of my Claude Code sessions publicly. Help me find and anonymize them.
+I want to contribute my Claude Code sessions to a public research collection. They'll be anonymized locally before sending.
 
-Step 1: Show me my sessions — run this and show the output:
-  python3 ~/Documents/GitHub/claude-session-anonymizer/anonymize.py --list
+1. Clone the anonymizer if I don't have it yet:
+   ls ~/Documents/GitHub/claude-session-anonymizer/anonymize.py 2>/dev/null || git clone https://github.com/Chill-AI-Space/claude-session-anonymizer.git ~/Documents/GitHub/claude-session-anonymizer
 
-Step 2: I'll pick which sessions to anonymize by telling you the IDs.
+2. Show my sessions sorted by size (biggest first — they're the most valuable for research):
+   python3 ~/Documents/GitHub/claude-session-anonymizer/anonymize.py --list
 
-Step 3: For each session I pick, run:
-  python3 ~/Documents/GitHub/claude-session-anonymizer/anonymize.py <session_ids> --project <project> -o ~/Desktop/anonymized
+3. From the list, suggest the top 5 biggest sessions and ask me: "These 5 sessions have the most activity. OK to anonymize and contribute all of them? Or pick different ones."
 
-Step 4: After anonymization, verify nothing leaked:
-  - Open the report.txt and pick 5-10 original values (emails, keys, paths)
-  - grep for each one in the transcript and session files
-  - Report back: how many values checked, how many found (should be 0)
+4. For the sessions I approve, anonymize and submit them in one go:
+   python3 ~/Documents/GitHub/claude-session-anonymizer/anonymize.py <session_ids> --project <project> -o ~/Desktop/anonymized --submit
 
-Step 5: Show me the first 30 lines of the transcript so I can confirm it looks good.
+5. After each submission, verify nothing leaked:
+   - Read report.txt, pick 5 original values (emails, paths, keys)
+   - grep for them in the output files
+   - Confirm: "Checked N values, 0 found in output. Clean."
+
+6. Show me the summary: how many sessions submitted, total size, and the link to browse the public collection.
 ```
 
 ---
 
-That's it. Claude will walk you through the whole process interactively.
+That's it — Claude handles cloning, sorting, anonymizing, verifying, and submitting. You just confirm which sessions to share.
